@@ -12,4 +12,17 @@ export default defineConfig({
       port: 3000,
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom", "react-router-dom"],
+          charts: ["recharts"],
+          icons: ["lucide-react"],
+          db: ["idb"],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 800,
+  },
 });

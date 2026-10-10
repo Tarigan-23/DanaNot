@@ -1,37 +1,38 @@
 <!doctype html>
-<html lang="id">
+<html lang="id" class="dark" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DanaNote — Sistem Catatan Peminjaman Uang</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>DanaNote — Catatan Peminjaman Uang</title>
+    <meta name="description" content="Aplikasi pencatatan peminjaman uang offline-first dengan input jasa pinjam manual dan laporan keuangan." />
+    
+    <!-- PWA & Mobile Meta Tags -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/icon.svg" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="DanaNote" />
+    <meta name="application-name" content="DanaNote" />
+    <meta name="format-detection" content="telephone=no" />
+
     <style>
-      html, body { margin: 0; padding: 0; width: 100%; height: 100%; }
+      html, body { 
+        margin: 0; 
+        padding: 0; 
+        width: 100%; 
+        height: 100%;
+        background-color: #0f172a;
+        color: #f8fafc;
+        -webkit-tap-highlight-color: transparent;
+      }
     </style>
     <script>
-      // 在 React 加载前立即设置主题，避免闪烁
       (function () {
-        const isInIframe = window.self !== window.top;
-
-        function applyThemeToDOM(theme) {
-          document.documentElement.classList.remove("light", "dark");
-          document.documentElement.classList.add(theme);
-          document.documentElement.setAttribute("data-theme", theme);
-        }
-
-        if (isInIframe) {
-          // 监听父窗口主动推送的主题消息
-          window.addEventListener("message", function (event) {
-            if (event.data && typeof event.data.theme === "string") {
-              const theme = event.data.theme;
-              if (theme === "light" || theme === "dark") {
-                applyThemeToDOM(theme);
-              }
-            }
-          });
-        } else {
-          // 非 iframe 环境，使用默认 light 主题
-          applyThemeToDOM("light");
-        }
+        document.documentElement.classList.add("dark");
+        document.documentElement.setAttribute("data-theme", "dark");
       })();
     </script>
       <script>

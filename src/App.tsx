@@ -7,30 +7,28 @@ import Loans from './pages/Loans';
 import Payments from './pages/Payments';
 import Reports from './pages/Reports';
 import BorrowerDetail from './pages/BorrowerDetail';
-import { getTheme, setTheme, seedDemoData } from './services/storage';
+import Settings from './pages/Settings';
+import { initializeStorage } from './services/storage';
+import { registerServiceWorker } from './services/pwa';
 
 function App() {
-  const [theme, setThemeState] = useState<'light' | 'dark'>(getTheme());
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-    document.documentElement.classList.toggle('light', theme === 'light');
-  }, [theme]);
+    // Ensure dark theme is permanently active
+    document.documentElement.classList.add('dark');
+    document.documentElement.setAttribute('data-theme', 'dark');
 
-  useEffect(() => {
-    // Seed demo data on first load
-    seedDemoData();
+    // Initialize IndexedDB storage & register Service Worker
+    initializeStorage().then(() => {
+      setReady(true);
+    });
+    registerServiceWorker();
   }, []);
-
-  const toggleTheme = () => {
-    const newTheme = theme === 'dark' ? 'light' : 'dark';
-    setThemeState(newTheme);
-    setTheme(newTheme);
-  };
 
   return (
     <HashRouter>
-      <Layout theme={theme} toggleTheme={toggleTheme}>
+      <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/borrowers" element={<Borrowers />} />
@@ -38,6 +36,7 @@ function App() {
           <Route path="/loans" element={<Loans />} />
           <Route path="/payments" element={<Payments />} />
           <Route path="/reports" element={<Reports />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </Layout>
     </HashRouter>

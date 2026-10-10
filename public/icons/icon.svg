@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="50%" stop-color="#047857"/>
+      <stop offset="100%" stop-color="#064e3b"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+    <filter id="dropShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Background Rounded Squircle -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  
+  <!-- Subtle Inner Ring -->
+  <rect x="24" y="24" width="464" height="464" rx="92" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="4"/>
+
+  <!-- Icon Container with Shadow -->
+  <g filter="url(#dropShadow)">
+    <!-- Wallet / Note Body -->
+    <rect x="100" y="140" width="312" height="232" rx="36" fill="#ffffff"/>
+    
+    <!-- Wallet Top Flap / Note Header -->
+    <path d="M100 176 C100 156.118 116.118 140 136 140 L376 140 C395.882 140 412 156.118 412 176 L412 210 L100 210 Z" fill="url(#accentGrad)"/>
+    
+    <!-- Cash / Document Note sticking out -->
+    <path d="M150 110 L362 110 C370.837 110 378 117.163 378 126 L378 140 L134 140 L134 126 C134 117.163 141.163 110 150 110 Z" fill="#a7f3d0"/>
+
+    <!-- Document Lines -->
+    <rect x="144" y="246" width="130" height="18" rx="9" fill="#059669"/>
+    <rect x="144" y="282" width="90" height="14" rx="7" fill="#6ee7b7"/>
+    <rect x="144" y="312" width="150" height="14" rx="7" fill="#cbd5e1"/>
+
+    <!-- Gold Rupiah / Coin Emblem -->
+    <circle cx="340" cy="285" r="44" fill="#fbbf24" stroke="#f59e0b" stroke-width="6"/>
+    <text x="340" y="296" font-family="'Segoe UI', Roboto, Inter, sans-serif" font-size="34" font-weight="900" fill="#78350f" text-anchor="middle">Rp</text>
+  </g>
+</svg>

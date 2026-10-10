@@ -1,0 +1,58 @@
+{
+  "name": "DanaNote — Catatan Peminjaman Uang",
+  "short_name": "DanaNote",
+  "description": "Aplikasi pencatatan peminjaman uang offline-first dengan perhitungan bunga otomatis, riwayat angsuran, dan laporan keuangan.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "theme_color": "#059669",
+  "background_color": "#0f172a",
+  "lang": "id",
+  "dir": "ltr",
+  "categories": ["finance", "business", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "48x48 72x72 96x96 128x128 192x192 256x256 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./favicon.svg",
+      "sizes": "64x64",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Catat Pembayaran",
+      "short_name": "Bayar",
+      "description": "Catat pembayaran angsuran baru",
+      "url": "./#/payments?action=add",
+      "icons": [{ "src": "./favicon.svg", "sizes": "64x64" }]
+    },
+    {
+      "name": "Tambah Peminjam",
+      "short_name": "Peminjam",
+      "description": "Tambah data peminjam baru",
+      "url": "./#/borrowers?action=add",
+      "icons": [{ "src": "./favicon.svg", "sizes": "64x64" }]
+    },
+    {
+      "name": "Laporan Keuangan",
+      "short_name": "Laporan",
+      "description": "Lihat rekapitulasi dan laporan kas",
+      "url": "./#/reports",
+      "icons": [{ "src": "./favicon.svg", "sizes": "64x64" }]
+    }
+  ]
+}
