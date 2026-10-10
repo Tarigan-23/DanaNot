@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { Plus, X, Trash2 } from 'lucide-react';
 import { Payment, Loan, Borrower } from '../types';
 import { formatCurrency, formatDate, getTodayISO } from '../utils';
@@ -11,7 +10,6 @@ interface PaymentWithDetails extends Payment {
 }
 
 export default function Payments() {
-  const [searchParams, setSearchParams] = useSearchParams();
   const [payments, setPayments] = useState<PaymentWithDetails[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
@@ -30,9 +28,6 @@ export default function Payments() {
   useEffect(() => {
     loadPayments();
     setBorrowers(getBorrowers());
-    if (searchParams.get('action') === 'add') {
-      setShowForm(true);
-    }
   }, []);
 
   useEffect(() => {
@@ -95,7 +90,6 @@ export default function Payments() {
     loadPayments();
     setShowForm(false);
     resetForm();
-    setSearchParams({});
   };
 
   const handleDelete = (id: string) => {
@@ -157,11 +151,11 @@ export default function Payments() {
 
       {/* Add Payment Form Modal */}
       {showForm && (
-        <div className="modal-overlay" onClick={() => { setShowForm(false); setSearchParams({}); }}>
+        <div className="modal-overlay" onClick={() => setShowForm(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold">Catat Pembayaran</h2>
-              <button onClick={() => { setShowForm(false); setSearchParams({}); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+              <button onClick={() => setShowForm(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -227,7 +221,7 @@ export default function Payments() {
 
               <div className="flex gap-3 pt-2">
                 <button type="submit" className="btn-primary flex-1">Simpan Pembayaran</button>
-                <button type="button" onClick={() => { setShowForm(false); setSearchParams({}); }} className="btn-secondary flex-1">Batal</button>
+                <button type="button" onClick={() => setShowForm(false)} className="btn-secondary flex-1">Batal</button>
               </div>
             </form>
           </div>

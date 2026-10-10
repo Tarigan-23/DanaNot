@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Plus, Search, Edit2, Trash2, X, Phone, MapPin } from 'lucide-react';
 import { Borrower } from '../types';
 import { formatCurrency, calculateLoan, getTodayISO } from '../utils';
 import { getBorrowers, addBorrower, updateBorrower, deleteBorrower, getLoansByBorrower, addLoan, updateLoan } from '../services/storage';
 
 export default function Borrowers() {
-  const [searchParams, setSearchParams] = useSearchParams();
   const [borrowers, setBorrowers] = useState<Borrower[]>([]);
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -28,10 +27,6 @@ export default function Borrowers() {
 
   useEffect(() => {
     setBorrowers(getBorrowers());
-    if (searchParams.get('action') === 'add') {
-      setShowForm(true);
-      setShowLoanPreview(true);
-    }
   }, []);
 
   const resetForm = () => {
@@ -83,7 +78,6 @@ export default function Borrowers() {
     setBorrowers(getBorrowers());
     setShowForm(false);
     resetForm();
-    setSearchParams({});
   };
 
   const handleEdit = (b: Borrower) => {
@@ -189,7 +183,7 @@ export default function Borrowers() {
           <div className="modal-content max-w-lg" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold">{editId ? 'Edit Peminjam' : 'Tambah Peminjam Baru'}</h2>
-              <button onClick={() => { setShowForm(false); resetForm(); setSearchParams({}); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+              <button onClick={() => { setShowForm(false); resetForm(); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -275,7 +269,7 @@ export default function Borrowers() {
                 <button type="submit" className="btn-primary flex-1">
                   {editId ? 'Simpan Perubahan' : 'Simpan'}
                 </button>
-                <button type="button" onClick={() => { setShowForm(false); resetForm(); setSearchParams({}); }} className="btn-secondary flex-1">
+                <button type="button" onClick={() => { setShowForm(false); resetForm(); }} className="btn-secondary flex-1">
                   Batal
                 </button>
               </div>
