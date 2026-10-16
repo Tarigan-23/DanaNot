@@ -1,0 +1,25 @@
+{
+  "version": "1.1.0",
+  "releaseDate": "17 Oktober 2026",
+  "minSupportedVersion": "1.0.0",
+  "critical": false,
+  "changelog": [
+    {
+      "title": "Sistem Pembaruan Otomatis (Update System)",
+      "items": [
+        "Pendeteksian versi baru otomatis saat online & hemat bandwidth.",
+        "Modal notifikasi update modern dengan opsi Update Sekarang dan Tunda.",
+        "Pembersihan cache aset dan aktivasi Service Worker baru yang aman.",
+        "Menu 'Tentang Aplikasi & Versi' lengkap dengan tombol Cek Pembaruan manual.",
+        "Jaminan 100% data peminjam, pinjaman, dan tabungan tetap aman di IndexedDB/LocalStorage."
+      ]
+    },
+    {
+      "title": "Penyempurnaan PWA & Pengaturan",
+      "items": [
+        "Status PWA terpasang vs browser web dengan panduan instalasi lengkap.",
+        "Pemisahan header cache Vercel agar file versi selalu segar dan tidak terjebak cache."
+      ]
+    }
+  ]
+}

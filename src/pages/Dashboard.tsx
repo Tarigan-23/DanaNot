@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Wallet, TrendingUp, CreditCard, AlertTriangle, 
-  Users, Plus, ArrowRight, Clock, Percent, Tag
+  Users, Plus, ArrowRight, Clock, Percent, PiggyBank
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '../utils';
 import { 
@@ -29,11 +29,11 @@ export default function Dashboard() {
 
   const statCards = [
     { label: 'Total Pinjaman Pokok', value: stats.totalPrincipal, isCurrency: true, icon: Wallet, color: 'emerald' },
-    { label: 'Total Jasa Pinjam', value: stats.totalInterestFee, isCurrency: true, icon: Tag, color: 'purple' },
-    { label: 'Total Tagihan (Pokok + Jasa)', value: stats.totalDue, isCurrency: true, icon: TrendingUp, color: 'blue' },
-    { label: 'Total Pembayaran Masuk', value: stats.totalPaid, isCurrency: true, icon: CreditCard, color: 'green' },
+    { label: 'Total Bunga Pinjaman', value: stats.totalInterestFee, isCurrency: true, icon: Percent, color: 'purple' },
+    { label: 'Total Tagihan (Pokok + Bunga)', value: stats.totalDue, isCurrency: true, icon: TrendingUp, color: 'blue' },
+    { label: 'Total Pembayaran Tunai', value: stats.totalPaidCash, isCurrency: true, icon: CreditCard, color: 'green' },
+    { label: 'Saldo Tabungan Peminjam', value: stats.totalSavingsBalance, isCurrency: true, icon: PiggyBank, color: 'teal' },
     { label: 'Sisa Tagihan Belum Lunas', value: stats.totalRemaining, isCurrency: true, icon: AlertTriangle, color: 'red' },
-    { label: 'Peminjam (Aktif / Total)', value: `${stats.activeBorrowersCount} / ${stats.totalBorrowers}`, isCurrency: false, icon: Users, color: 'teal' },
   ];
 
   const colorMap: Record<string, string> = {
@@ -52,7 +52,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white">Dashboard Ringkasan</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Pantau arus peminjaman, jasa pinjam, dan pembayaran secara real-time
+            Pantau arus peminjaman, bunga pinjaman, saldo tabungan, dan pembayaran secara real-time
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -98,17 +98,26 @@ export default function Dashboard() {
             <p className="text-xs py-8 text-center text-slate-500">Belum ada riwayat pembayaran</p>
           ) : (
             <div className="divide-y divide-slate-700/60">
-              {recentPayments.map((p) => (
-                <div key={p.id} className="py-2.5 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-200">{p.borrower_name || '-'}</p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      {formatDate(p.payment_date)} {p.payment_method && `• ${p.payment_method}`}
-                    </p>
+              {recentPayments.map((p) => {
+                const isSavings = p.is_savings_payment || p.payment_method === 'Tabungan';
+
+                return (
+                  <div key={p.id} className="py-3 flex items-center justify-between text-xs">
+                    <div>
+                      <p className="font-semibold text-white">{p.borrower_name || 'Tanpa Nama'}</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        {formatDate(p.payment_date)} • {isSavings ? 'Tabungan Peminjam' : p.payment_method || 'Tunai'}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`font-bold ${isSavings ? 'text-purple-400' : 'text-emerald-400'}`}>
+                        +{formatCurrency(p.amount)}
+                      </p>
+                      <span className="text-[10px] text-slate-400 font-mono">{p.receipt_no}</span>
+                    </div>
                   </div>
-                  <span className="text-sm font-bold text-emerald-400">+{formatCurrency(p.amount)}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -124,21 +133,19 @@ export default function Dashboard() {
             </Link>
           </div>
           {recentLoans.length === 0 ? (
-            <p className="text-xs py-8 text-center text-slate-500">Belum ada pinjaman tercatat</p>
+            <p className="text-xs py-8 text-center text-slate-500">Belum ada riwayat pinjaman</p>
           ) : (
             <div className="divide-y divide-slate-700/60">
               {recentLoans.map((l) => (
-                <div key={l.id} className="py-2.5 flex items-center justify-between">
+                <div key={l.id} className="py-3 flex items-center justify-between text-xs">
                   <div>
-                    <Link to={`/borrowers/${l.borrower_id}`} className="text-sm font-semibold text-slate-200 hover:text-emerald-400 block">
-                      {l.borrower_name || '-'}
-                    </Link>
+                    <p className="font-semibold text-white">{l.borrower_name || 'Tanpa Nama'}</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      {formatDate(l.loan_date)} • Pokok: {formatCurrency(l.principal_amount)} • Jasa: {formatCurrency(l.interest_fee || 0)}
+                      {formatDate(l.loan_date)} • Bunga: {l.interest_rate !== undefined ? `${l.interest_rate}%` : '20%'}
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold text-white">{formatCurrency(l.total_due)}</p>
+                    <p className="font-bold text-white">{formatCurrency(l.total_due)}</p>
                     <span className={`badge ${l.status === 'lunas' ? 'badge-success' : 'badge-warning'} text-[10px]`}>
                       {l.status === 'lunas' ? 'Lunas' : 'Belum Lunas'}
                     </span>

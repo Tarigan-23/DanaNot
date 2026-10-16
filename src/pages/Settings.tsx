@@ -2,25 +2,36 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Settings as SettingsIcon, Download, Upload, Database, RefreshCw, 
   Trash2, Cloud, Wifi, WifiOff, CheckCircle2, 
-  AlertCircle, Smartphone
+  AlertCircle, Smartphone, Percent, PiggyBank, Save
 } from 'lucide-react';
 import { 
-  getBorrowers, getLoans, getPayments, createBackup, 
+  getBorrowers, getLoans, getPayments, getSavingsTransactions, createBackup, 
   restoreBackup, clearAllData, seedDemoData, getSyncConfig, 
-  saveSyncConfig 
+  saveSyncConfig, getAppSettings, updateAppSettings 
 } from '../services/storage';
 import { syncToCloud, testCloudConnection } from '../services/sync';
 import { exportToJSONFile } from '../utils';
 import { isAppInstalled } from '../services/pwa';
 import PWAInstallModal from '../components/PWAInstallModal';
+import AboutAppModal from '../components/AboutAppModal';
+import { CURRENT_APP_VERSION, CURRENT_RELEASE_DATE } from '../version';
+import { subscribeUpdate, getUpdateState, UpdateState } from '../services/updateService';
 
 export default function Settings() {
   const [borrowersCount, setBorrowersCount] = useState(0);
   const [loansCount, setLoansCount] = useState(0);
   const [paymentsCount, setPaymentsCount] = useState(0);
+  const [savingsCount, setSavingsCount] = useState(0);
   const [isPWAInstalled, setIsPWAInstalled] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
+  const [updateState, setUpdateState] = useState<UpdateState>(getUpdateState());
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  // App Financial Rules Setting State
+  const [interestRate, setInterestRate] = useState(20);
+  const [savingsRate, setSavingsRate] = useState(5);
+  const [rulesSavedMessage, setRulesSavedMessage] = useState(false);
 
   // Cloud Sync Form State
   const [syncConfig, setSyncConfigState] = useState(getSyncConfig());
@@ -36,6 +47,9 @@ export default function Settings() {
 
   useEffect(() => {
     refreshCounts();
+    const currentSettings = getAppSettings();
+    setInterestRate(currentSettings.defaultInterestRate);
+    setSavingsRate(currentSettings.defaultSavingsRate);
     setIsPWAInstalled(isAppInstalled());
 
     const handleOnline = () => setIsOnline(true);
@@ -43,9 +57,12 @@ export default function Settings() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
+    const unsubUpdate = subscribeUpdate((st) => setUpdateState(st));
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      unsubUpdate();
     };
   }, []);
 
@@ -53,6 +70,21 @@ export default function Settings() {
     setBorrowersCount(getBorrowers().length);
     setLoansCount(getLoans().length);
     setPaymentsCount(getPayments().length);
+    setSavingsCount(getSavingsTransactions().length);
+  };
+
+  const handleSaveFinancialRules = (e: React.FormEvent) => {
+    e.preventDefault();
+    const validInterest = Math.max(0, Number(interestRate) || 0);
+    const validSavings = Math.max(0, Number(savingsRate) || 0);
+
+    updateAppSettings({
+      defaultInterestRate: validInterest,
+      defaultSavingsRate: validSavings,
+    });
+
+    setRulesSavedMessage(true);
+    setTimeout(() => setRulesSavedMessage(false), 3000);
   };
 
   const handleBackupDownload = () => {
@@ -72,9 +104,12 @@ export default function Settings() {
         if (result.success) {
           setRestoreStatus({
             success: true,
-            text: `Berhasil memulihkan ${result.counts.borrowers} peminjam, ${result.counts.loans} pinjaman, dan ${result.counts.payments} pembayaran.`,
+            text: `Berhasil memulihkan ${result.counts.borrowers} peminjam, ${result.counts.loans} pinjaman, ${result.counts.payments} pembayaran, dan ${result.counts.savings} mutasi tabungan.`,
           });
           refreshCounts();
+          const cur = getAppSettings();
+          setInterestRate(cur.defaultInterestRate);
+          setSavingsRate(cur.defaultSavingsRate);
         } else {
           setRestoreStatus({ success: false, text: result.message });
         }
@@ -90,7 +125,7 @@ export default function Settings() {
     await clearAllData();
     refreshCounts();
     setShowClearConfirm(false);
-    setRestoreStatus({ success: true, text: 'Seluruh database telah dikosongkan.' });
+    setRestoreStatus({ success: true, text: 'Seluruh database telah dikosongkan. Data tidak akan diisi ulang otomatis.' });
   };
 
   const handleSeedDemo = () => {
@@ -132,8 +167,82 @@ export default function Settings() {
           <SettingsIcon className="w-6 h-6 text-emerald-400" /> Pengaturan & Cadangan
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          Kelola penyimpanan offline IndexedDB, pencadangan data JSON, dan integrasi cloud
+          Atur persentase bunga default, tabungan otomatis peminjam, pencadangan data, dan integrasi cloud
         </p>
+      </div>
+
+      {/* Financial Rules Card (BUNGA & TABUNGAN DEFAULT) */}
+      <div className="card p-5 space-y-4 bg-[#1e293b] border-slate-700/80">
+        <div className="flex items-center justify-between border-b border-slate-700 pb-3">
+          <div className="flex items-center gap-2 font-semibold text-white text-sm">
+            <Percent className="w-5 h-5 text-emerald-400" />
+            <h3>Pengaturan Bunga & Tabungan Default</h3>
+          </div>
+          <span className="badge badge-success text-[11px]">Snapshot Transaksi</span>
+        </div>
+
+        <p className="text-xs text-slate-400 leading-relaxed">
+          Atur tarif persentase standar untuk transaksi pinjaman baru berikutnya. Perubahan pengaturan ini tidak akan mengubah perhitungan pinjaman lama yang sudah tersimpan sebelumnya.
+        </p>
+
+        <form onSubmit={handleSaveFinancialRules} className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+          <div>
+            <label className="block text-xs font-semibold mb-1 text-slate-300 flex items-center gap-1.5">
+              <Percent className="w-3.5 h-3.5 text-purple-400" />
+              Bunga Pinjaman Default (%)
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={interestRate}
+                onChange={(e) => setInterestRate(Number(e.target.value))}
+                className="input-field text-xs pr-8"
+                required
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">%</span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Standar 20%. Ditambahkan sebagai Jasa Pinjam ke total tagihan.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold mb-1 text-slate-300 flex items-center gap-1.5">
+              <PiggyBank className="w-3.5 h-3.5 text-emerald-400" />
+              Tabungan Otomatis Peminjam Default (%)
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={savingsRate}
+                onChange={(e) => setSavingsRate(Number(e.target.value))}
+                className="input-field text-xs pr-8"
+                required
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">%</span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Standar 5%. Dihitung dari pokok dan dicatat otomatis ke saldo tabungan peminjam.
+            </p>
+          </div>
+
+          <div className="sm:col-span-2 flex items-center gap-3 pt-1">
+            <button type="submit" className="btn-primary text-xs flex items-center gap-1.5">
+              <Save className="w-3.5 h-3.5" /> Simpan Perubahan Bunga & Tabungan
+            </button>
+            {rulesSavedMessage && (
+              <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4" /> Pengaturan berhasil disimpan!
+              </span>
+            )}
+          </div>
+        </form>
       </div>
 
       {/* PWA & Platform Status Banner */}
@@ -164,21 +273,51 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* About App & Update Management Card */}
+      <div className="card p-5 space-y-4 bg-[#1e293b] border-slate-700/80">
+        <div className="flex items-center justify-between border-b border-slate-700 pb-3">
+          <div className="flex items-center gap-2 font-semibold text-white text-sm">
+            <RefreshCw className="w-5 h-5 text-emerald-400" />
+            <h3>Versi Aplikasi & Pembaruan Otomatis</h3>
+          </div>
+          <span className="badge badge-success text-[11px]">v{CURRENT_APP_VERSION}</span>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-xl border border-slate-800">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-white">DanaNote Versi {CURRENT_APP_VERSION}</span>
+              <span className="text-slate-500 text-xs">•</span>
+              <span className="text-xs text-slate-400">{CURRENT_RELEASE_DATE}</span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Sistem update otomatis mendeteksi rilis baru saat online dan mengisolasi data pengguna tanpa reset.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowAboutModal(true)}
+            className="btn-secondary text-xs flex items-center gap-1.5 whitespace-nowrap"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-emerald-400" /> Periksa Pembaruan & Changelog
+          </button>
+        </div>
+      </div>
+
       {/* Storage & Database Health Card */}
       <div className="card p-5 space-y-4 bg-[#1e293b] border-slate-700/80">
         <div className="flex items-center justify-between border-b border-slate-700 pb-3">
           <div className="flex items-center gap-2 font-semibold text-white text-sm">
             <Database className="w-5 h-5 text-emerald-400" />
-            <h3>Status Penyimpanan Database</h3>
+            <h3>Status Penyimpanan Database Lokal</h3>
           </div>
           <div className="flex items-center gap-2 text-xs">
             <span className="flex items-center gap-1 text-emerald-400 font-semibold">
-              <CheckCircle2 className="w-4 h-4" /> IndexedDB Aktif
+              <CheckCircle2 className="w-4 h-4" /> IndexedDB & LocalStorage Sinkron
             </span>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3 text-center">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
           <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-700/60">
             <span className="text-xs text-slate-400 block">Total Peminjam</span>
             <span className="text-xl font-bold text-emerald-400">{borrowersCount}</span>
@@ -190,6 +329,10 @@ export default function Settings() {
           <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-700/60">
             <span className="text-xs text-slate-400 block">Transaksi Bayar</span>
             <span className="text-xl font-bold text-teal-400">{paymentsCount}</span>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-700/60">
+            <span className="text-xs text-slate-400 block">Mutasi Tabungan</span>
+            <span className="text-xl font-bold text-purple-400">{savingsCount}</span>
           </div>
         </div>
 
@@ -223,7 +366,7 @@ export default function Settings() {
         </div>
 
         <p className="text-xs text-slate-400">
-          Unggah file cadangan <code>.json</code> untuk mengembalikan data peminjam dan transaksi.
+          Unggah file cadangan <code>.json</code> untuk mengembalikan data peminjam, pinjaman, tabungan, dan riwayat pembayaran.
         </p>
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
@@ -383,7 +526,7 @@ export default function Settings() {
           <div className="modal-content max-w-sm bg-[#1e293b] border-slate-700" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-base font-bold mb-2 text-red-400">Kosongkan Semua Data?</h2>
             <p className="text-xs mb-4 text-slate-400">
-              Seluruh data peminjam, pinjaman, dan riwayat pembayaran akan dihapus permanen dari browser ini. Pastikan Anda telah mengunduh file cadangan.
+              Seluruh data peminjam, pinjaman, tabungan, dan riwayat pembayaran akan dihapus permanen dari browser ini. Aplikasi tidak akan mereset ke data simulasi secara otomatis.
             </p>
             <div className="flex gap-3">
               <button onClick={handleClearDatabase} className="btn-danger flex-1 text-xs">
@@ -401,6 +544,13 @@ export default function Settings() {
       <PWAInstallModal
         isOpen={showInstallModal}
         onClose={() => setShowInstallModal(false)}
+      />
+
+      {/* About App Modal */}
+      <AboutAppModal
+        isOpen={showAboutModal}
+        onClose={() => setShowAboutModal(false)}
+        updateState={updateState}
       />
     </div>
   );

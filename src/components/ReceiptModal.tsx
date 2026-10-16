@@ -167,13 +167,23 @@ export default function ReceiptModal({
                       <td className="p-3 text-right font-semibold">{formatCurrency(loan.principal_amount)}</td>
                     </tr>
                     <tr>
-                      <td className="p-3">Jasa Pinjam</td>
-                      <td className="p-3 text-right font-semibold">{formatCurrency(fee)}</td>
+                      <td className="p-3">
+                        Bunga Pinjaman ({loan.interest_rate !== undefined ? `${loan.interest_rate}%` : '20%'})
+                      </td>
+                      <td className="p-3 text-right font-semibold text-purple-700">{formatCurrency(fee)}</td>
                     </tr>
                     <tr className="bg-gray-50 font-bold">
                       <td className="p-3 text-emerald-800">TOTAL TAGIHAN</td>
                       <td className="p-3 text-right text-emerald-800 text-sm">{formatCurrency(loan.total_due)}</td>
                     </tr>
+                    {loan.savings_deposit_amount && loan.savings_deposit_amount > 0 ? (
+                      <tr className="bg-emerald-50/40 text-emerald-800">
+                        <td className="p-3">
+                          Tambahan Tabungan Otomatis ({loan.savings_deposit_rate || 5}%)
+                        </td>
+                        <td className="p-3 text-right font-semibold">+{formatCurrency(loan.savings_deposit_amount)}</td>
+                      </tr>
+                    ) : null}
                     <tr>
                       <td className="p-3">Total Pembayaran Masuk</td>
                       <td className="p-3 text-right text-emerald-600 font-semibold">{formatCurrency(totalPaid)}</td>

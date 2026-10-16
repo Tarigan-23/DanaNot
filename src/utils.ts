@@ -90,20 +90,49 @@ export function generateReceiptNo(): string {
 }
 
 /**
- * Calculate loan: Total Tagihan = Pokok + Jasa Pinjam
+ * Calculate loan: Nominal bunga = pokok * (persentase / 100), Total Tagihan = Pokok + Nominal Bunga
  */
 export function calculateLoan(
   principal: number,
-  interestFee: number = 0
+  interestRateOrFee: number = 20,
+  isRate: boolean = true
 ): {
   principal: number;
+  interestRate: number;
   interestFee: number;
   totalDue: number;
 } {
   const validPrincipal = Math.max(0, Math.round(Number(principal) || 0));
-  const validFee = Math.max(0, Math.round(Number(interestFee) || 0));
-  const totalDue = validPrincipal + validFee;
-  return { principal: validPrincipal, interestFee: validFee, totalDue };
+  if (isRate) {
+    const rate = Math.max(0, Number(interestRateOrFee) || 0);
+    const fee = Math.round((validPrincipal * rate) / 100);
+    const totalDue = validPrincipal + fee;
+    return {
+      principal: validPrincipal,
+      interestRate: rate,
+      interestFee: fee,
+      totalDue,
+    };
+  } else {
+    const fee = Math.max(0, Math.round(Number(interestRateOrFee) || 0));
+    const rate = validPrincipal > 0 ? (fee / validPrincipal) * 100 : 0;
+    const totalDue = validPrincipal + fee;
+    return {
+      principal: validPrincipal,
+      interestRate: Math.round(rate * 100) / 100,
+      interestFee: fee,
+      totalDue,
+    };
+  }
+}
+
+/**
+ * Calculate automatic savings addition from principal amount
+ */
+export function calculateSavingsDeposit(principal: number, savingsRate: number = 5): number {
+  const validPrincipal = Math.max(0, Math.round(Number(principal) || 0));
+  const rate = Math.max(0, Number(savingsRate) || 0);
+  return Math.round((validPrincipal * rate) / 100);
 }
 
 /**

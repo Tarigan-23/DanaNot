@@ -3,14 +3,14 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { 
   Plus, Search, Edit2, Trash2, X, Phone, MapPin, 
   CreditCard, ChevronRight, UserPlus, CheckCircle2,
-  AlertCircle, ShieldCheck, Tag
+  AlertCircle, ShieldCheck, Tag, Percent, PiggyBank
 } from 'lucide-react';
 import { Borrower, Loan } from '../types';
 import { formatCurrency, calculateLoan, getTodayISO, getNowISO } from '../utils';
 import { 
   getBorrowers, addBorrower, updateBorrower, deleteBorrower, 
   getLoansByBorrower, addLoan, addPayment, subscribeDataChanges, 
-  getTotalPaidForLoan 
+  getTotalPaidForLoan, getAppSettings, getBorrowerSavings 
 } from '../services/storage';
 
 export default function Borrowers() {
@@ -33,7 +33,8 @@ export default function Borrowers() {
 
   const [includeLoan, setIncludeLoan] = useState(true);
   const [principal, setPrincipal] = useState('');
-  const [interestFee, setInterestFee] = useState('');
+  const [interestRate, setInterestRate] = useState<number>(20);
+  const [savingsRate, setSavingsRate] = useState<number>(5);
   const [loanNotes, setLoanNotes] = useState('');
 
   // Quick Payment on Card State: Map of borrowerId -> payment input value
@@ -47,6 +48,10 @@ export default function Borrowers() {
 
   useEffect(() => {
     loadData();
+    const settings = getAppSettings();
+    setInterestRate(settings.defaultInterestRate);
+    setSavingsRate(settings.defaultSavingsRate);
+
     const unsub = subscribeDataChanges(loadData);
     return () => unsub();
   }, []);
@@ -59,13 +64,15 @@ export default function Borrowers() {
   }, [searchParams]);
 
   const resetBorrowerForm = () => {
+    const settings = getAppSettings();
     setName('');
     setPhone('');
     setAddress('');
     setNik('');
     setNotes('');
     setPrincipal('');
-    setInterestFee('');
+    setInterestRate(settings.defaultInterestRate);
+    setSavingsRate(settings.defaultSavingsRate);
     setLoanNotes('');
     setEditBorrowerId(null);
     setIncludeLoan(true);
@@ -96,14 +103,20 @@ export default function Borrowers() {
 
         if (includeLoan && principal && Number(principal) > 0) {
           const principalNum = Math.round(Number(principal));
-          const feeNum = Math.round(Number(interestFee) || 0);
+          const rateNum = Number(interestRate) >= 0 ? Number(interestRate) : 20;
+          const feeNum = Math.round((principalNum * rateNum) / 100);
           const totalDue = principalNum + feeNum;
+          const savRate = Number(savingsRate) >= 0 ? Number(savingsRate) : 5;
+          const savAmt = Math.round((principalNum * savRate) / 100);
 
           addLoan({
             borrower_id: newBorrower.id,
             principal_amount: principalNum,
+            interest_rate: rateNum,
             interest_fee: feeNum,
             total_due: totalDue,
+            savings_deposit_rate: savRate,
+            savings_deposit_amount: savAmt,
             loan_date: getNowISO(),
             notes: loanNotes.trim() || undefined,
           });
@@ -201,10 +214,10 @@ export default function Borrowers() {
     );
   });
 
-  const previewCalculation =
-    principal && Number(principal) > 0
-      ? calculateLoan(Number(principal), Number(interestFee) || 0)
-      : null;
+  const previewPrincipal = principal && Number(principal) > 0 ? Number(principal) : 0;
+  const previewFee = Math.round((previewPrincipal * (Number(interestRate) || 0)) / 100);
+  const previewDue = previewPrincipal + previewFee;
+  const previewSavings = Math.round((previewPrincipal * (Number(savingsRate) || 0)) / 100);
 
   return (
     <div className="space-y-6">
@@ -213,7 +226,7 @@ export default function Borrowers() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white">Data Peminjam</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Kelola profil peminjam dan catat pembayaran langsung dari kartu peminjam
+            Kelola profil peminjam, pantau saldo tabungan, dan catat pembayaran langsung dari kartu peminjam
           </p>
         </div>
         <button
@@ -252,6 +265,7 @@ export default function Borrowers() {
             const totalDue = borrowerLoans.reduce((s, l) => s + (l.total_due || 0), 0);
             const totalPaid = borrowerLoans.reduce((s, l) => s + getTotalPaidForLoan(l.id), 0);
             const remaining = Math.max(0, totalDue - totalPaid);
+            const savingsSummary = getBorrowerSavings(b.id);
             const isSubmittingQuick = !!quickPaySubmitting[b.id];
             const currentInput = quickPayInputs[b.id] || '';
 
@@ -278,6 +292,11 @@ export default function Borrowers() {
                         ) : (
                           <span className="badge badge-success text-[10px]">Lunas</span>
                         )}
+                        {savingsSummary.currentBalance > 0 && (
+                          <span className="badge badge-success text-[10px] flex items-center gap-1">
+                            <PiggyBank className="w-3 h-3" /> Tabungan: {formatCurrency(savingsSummary.currentBalance)}
+                          </span>
+                        )}
                       </div>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-slate-400 mt-0.5">
                         {b.phone && (
@@ -294,7 +313,7 @@ export default function Borrowers() {
                     </div>
                   </div>
 
-                  {/* Sisa Tagihan Indicator */}
+                  {/* Sisa Tagihan & Tabungan Indicator */}
                   <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 border-slate-700/60 pt-2 sm:pt-0">
                     <div className="text-left sm:text-right">
                       <span className="text-[11px] text-slate-400 block">Sisa Tagihan:</span>
@@ -328,7 +347,7 @@ export default function Borrowers() {
                   <div className="relative flex-1">
                     <input
                       type="number"
-                      placeholder="Masukkan nominal pembayaran (Rp)..."
+                      placeholder="Masukkan nominal pembayaran tunai (Rp)..."
                       value={currentInput}
                       onChange={(e) =>
                         setQuickPayInputs({ ...quickPayInputs, [b.id]: e.target.value })
@@ -357,7 +376,7 @@ export default function Borrowers() {
                       to={`/borrowers/${b.id}`}
                       className="btn-secondary text-xs py-2 px-3.5 flex items-center justify-center gap-1 whitespace-nowrap text-slate-200"
                     >
-                      Detail <ChevronRight className="w-3.5 h-3.5" />
+                      Detail & Tabungan <ChevronRight className="w-3.5 h-3.5" />
                     </Link>
                   </div>
                 </div>
@@ -478,19 +497,46 @@ export default function Borrowers() {
                         />
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-semibold mb-1 text-slate-300">
-                          Jasa Pinjam (Rp) (Nominal Tetap)
-                        </label>
-                        <input
-                          type="number"
-                          value={interestFee}
-                          onChange={(e) => setInterestFee(e.target.value)}
-                          className="input-field text-xs"
-                          min="0"
-                          step="1000"
-                          placeholder="Contoh: 200000"
-                        />
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold mb-1 text-slate-300 flex items-center gap-1">
+                            <Percent className="w-3.5 h-3.5 text-purple-400" />
+                            Bunga (%) *
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              value={interestRate}
+                              onChange={(e) => setInterestRate(Number(e.target.value))}
+                              className="input-field text-xs pr-7"
+                              min="0"
+                              max="100"
+                              step="0.5"
+                              required={includeLoan}
+                            />
+                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold mb-1 text-slate-300 flex items-center gap-1">
+                            <PiggyBank className="w-3.5 h-3.5 text-emerald-400" />
+                            Tabungan Otomatis (%) *
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              value={savingsRate}
+                              onChange={(e) => setSavingsRate(Number(e.target.value))}
+                              className="input-field text-xs pr-7"
+                              min="0"
+                              max="100"
+                              step="0.5"
+                              required={includeLoan}
+                            />
+                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
+                          </div>
+                        </div>
                       </div>
 
                       <div>
@@ -506,24 +552,32 @@ export default function Borrowers() {
                         />
                       </div>
 
-                      {previewCalculation && (
-                        <div className="p-3 rounded-lg bg-emerald-950/40 text-xs space-y-1 border border-emerald-800/80">
+                      {previewPrincipal > 0 && (
+                        <div className="p-3 rounded-lg bg-emerald-950/40 text-xs space-y-1.5 border border-emerald-800/80">
                           <div className="flex justify-between">
                             <span className="text-slate-400">Pokok Pinjaman:</span>
                             <span className="font-semibold text-slate-200">
-                              {formatCurrency(previewCalculation.principal)}
+                              {formatCurrency(previewPrincipal)}
                             </span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-slate-400">Jasa Pinjam:</span>
-                            <span className="font-semibold text-emerald-400">
-                              {formatCurrency(previewCalculation.interestFee)}
+                            <span className="text-slate-400">Nominal Bunga ({interestRate}%):</span>
+                            <span className="font-semibold text-purple-400">
+                              {formatCurrency(previewFee)}
                             </span>
                           </div>
                           <div className="flex justify-between pt-1 border-t border-emerald-800/60">
                             <span className="text-slate-300 font-bold">TOTAL TAGIHAN:</span>
                             <span className="font-bold text-emerald-400 text-sm">
-                              {formatCurrency(previewCalculation.totalDue)}
+                              {formatCurrency(previewDue)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between pt-1 border-t border-dashed border-emerald-800/60 text-emerald-300">
+                            <span className="flex items-center gap-1 text-[11px]">
+                              <PiggyBank className="w-3.5 h-3.5" /> Tambahan Tabungan ({savingsRate}%):
+                            </span>
+                            <span className="font-bold text-xs">
+                              +{formatCurrency(previewSavings)}
                             </span>
                           </div>
                         </div>
@@ -571,7 +625,7 @@ export default function Borrowers() {
           <div className="modal-content max-w-sm bg-[#1e293b] border-slate-700" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-base font-bold mb-2 text-red-400">Hapus Data Peminjam?</h2>
             <p className="text-xs mb-4 text-slate-400">
-              Semua riwayat pinjaman dan pembayaran terkait peminjam ini juga akan dihapus permanen.
+              Semua riwayat pinjaman, pembayaran, dan tabungan terkait peminjam ini juga akan dihapus permanen.
             </p>
             <div className="flex gap-3">
               <button

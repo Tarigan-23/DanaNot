@@ -1,5 +1,5 @@
 // DanaNote Service Worker - Offline First PWA
-const CACHE_NAME = 'dananote-cache-v1';
+const CACHE_NAME = 'dananote-cache-v1.1.0';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -13,17 +13,19 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS);
-    }).then(() => self.skipWaiting())
+    })
   );
+  // Do NOT self.skipWaiting() automatically here, so client can detect waiting SW and ask user to confirm!
 });
 
-// Activate event: clean old caches
+// Activate event: clean old caches safely without touching IndexedDB or storage
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
-          if (key !== CACHE_NAME) {
+          if (key !== CACHE_NAME && key.startsWith('dananote-cache-')) {
+            console.log('[SW] Deleting old cache version:', key);
             return caches.delete(key);
           }
         })
@@ -36,8 +38,22 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const request = event.request;
 
-  // Ignore non-GET requests or chrome-extension schemes
+  // Ignore non-GET requests or non-http(s) schemes
   if (request.method !== 'GET' || !request.url.startsWith('http')) {
+    return;
+  }
+
+  // CRITICAL: NEVER cache version.json in Service Worker Cache API!
+  // Always fetch fresh from network with no-cache flag so version checks are immediate and accurate
+  if (request.url.includes('/version.json')) {
+    event.respondWith(
+      fetch(request, { cache: 'no-store' }).catch(() => {
+        return new Response(JSON.stringify({ error: 'offline' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      })
+    );
     return;
   }
 

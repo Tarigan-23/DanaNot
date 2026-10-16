@@ -1,5 +1,5 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
-import { Borrower, Loan, Payment } from '../types';
+import { Borrower, Loan, Payment, SavingsTransaction } from '../types';
 
 interface DanaNoteDBSchema extends DBSchema {
   borrowers: {
@@ -28,6 +28,16 @@ interface DanaNoteDBSchema extends DBSchema {
       'by-created': string;
     };
   };
+  savings_transactions: {
+    key: string;
+    value: SavingsTransaction;
+    indexes: {
+      'by-borrower': string;
+      'by-date': string;
+      'by-loan': string;
+      'by-type': string;
+    };
+  };
   settings: {
     key: string;
     value: any;
@@ -46,7 +56,7 @@ interface DanaNoteDBSchema extends DBSchema {
 }
 
 const DB_NAME = 'DanaNoteIndexedDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise: Promise<IDBPDatabase<DanaNoteDBSchema>> | null = null;
 
@@ -72,6 +82,14 @@ export function getDB(): Promise<IDBPDatabase<DanaNoteDBSchema>> {
           paymentStore.createIndex('by-loan', 'loan_id');
           paymentStore.createIndex('by-date', 'payment_date');
           paymentStore.createIndex('by-created', 'created_at');
+        }
+
+        if (!db.objectStoreNames.contains('savings_transactions')) {
+          const savingsStore = db.createObjectStore('savings_transactions', { keyPath: 'id' });
+          savingsStore.createIndex('by-borrower', 'borrower_id');
+          savingsStore.createIndex('by-date', 'date');
+          savingsStore.createIndex('by-loan', 'loan_id');
+          savingsStore.createIndex('by-type', 'type');
         }
 
         if (!db.objectStoreNames.contains('settings')) {

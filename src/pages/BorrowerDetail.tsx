@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Phone, MapPin, CreditCard, Printer, 
-  Calendar, MessageCircle, PlusCircle, Trash2, Tag, ShieldCheck
+  Calendar, MessageCircle, PlusCircle, Trash2, Tag, ShieldCheck,
+  PiggyBank, ArrowDownLeft, ArrowUpRight, Percent, AlertCircle
 } from 'lucide-react';
-import { Borrower, Loan, Payment } from '../types';
+import { Borrower, Loan, Payment, SavingsTransaction, BorrowerSavingsSummary } from '../types';
 import { 
   formatCurrency, formatDate, formatDateTime, getNowISO, 
   generateWhatsAppReminder, calculateLoan 
@@ -12,7 +13,8 @@ import {
 import { 
   getBorrower, getLoansByBorrower, getPaymentsByLoan, 
   getTotalPaidForLoan, addPayment, addLoan, deletePayment, 
-  subscribeDataChanges 
+  subscribeDataChanges, getBorrowerSavings, getSavingsByBorrower, 
+  withdrawSavings, getAppSettings 
 } from '../services/storage';
 import ReceiptModal from '../components/ReceiptModal';
 
@@ -21,19 +23,34 @@ export default function BorrowerDetail() {
   const navigate = useNavigate();
   const [borrower, setBorrower] = useState<Borrower | null>(null);
   const [loans, setLoans] = useState<(Loan & { total_paid: number; remaining: number })[]>([]);
+  const [savingsSummary, setSavingsSummary] = useState<BorrowerSavingsSummary>({
+    totalDeposited: 0,
+    totalUsed: 0,
+    totalWithdrawn: 0,
+    currentBalance: 0,
+  });
+  const [savingsHistory, setSavingsHistory] = useState<SavingsTransaction[]>([]);
   
   // Payment Modal State
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [selectedLoanId, setSelectedLoanId] = useState('');
   const [payAmount, setPayAmount] = useState('');
-  const [payMethod, setPayMethod] = useState('Tunai');
+  const [payMethod, setPayMethod] = useState<'Tunai' | 'Tabungan' | 'Transfer Bank' | 'E-Wallet' | 'Lainnya'>('Tunai');
   const [payNotes, setPayNotes] = useState('');
+  const [paymentError, setPaymentError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Savings Withdrawal Modal State
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawNotes, setWithdrawNotes] = useState('');
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
   // New Loan Modal State
   const [showNewLoanModal, setShowNewLoanModal] = useState(false);
   const [principal, setPrincipal] = useState('');
-  const [interestFee, setInterestFee] = useState('');
+  const [interestRate, setInterestRate] = useState<number>(20);
+  const [savingsRate, setSavingsRate] = useState<number>(5);
   const [loanNotes, setLoanNotes] = useState('');
 
   // Receipt & Print Modal State
@@ -60,10 +77,18 @@ export default function BorrowerDetail() {
       };
     });
     setLoans(borrowerLoans);
+
+    // Load savings details
+    setSavingsSummary(getBorrowerSavings(id));
+    setSavingsHistory(getSavingsByBorrower(id));
   };
 
   useEffect(() => {
     loadData();
+    const settings = getAppSettings();
+    setInterestRate(settings.defaultInterestRate);
+    setSavingsRate(settings.defaultSavingsRate);
+
     const unsub = subscribeDataChanges(loadData);
     return () => unsub();
   }, [id]);
@@ -78,14 +103,40 @@ export default function BorrowerDetail() {
 
   const activeLoan = loans.find((l) => l.status === 'belum_lunas') || loans[0];
 
+  const handleOpenNewLoan = () => {
+    const settings = getAppSettings();
+    setPrincipal('');
+    setInterestRate(settings.defaultInterestRate);
+    setSavingsRate(settings.defaultSavingsRate);
+    setLoanNotes('');
+    setShowNewLoanModal(true);
+  };
+
+  const handleUseMaxSavingsForPay = (targetRemaining: number) => {
+    const maxVal = Math.min(savingsSummary.currentBalance, targetRemaining);
+    setPayAmount(String(maxVal));
+    setPayMethod('Tabungan');
+  };
+
   const handlePayment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedLoanId || !payAmount || Number(payAmount) <= 0 || isSubmitting) return;
 
+    setPaymentError(null);
     const targetLoan = loans.find((l) => l.id === selectedLoanId);
     const amountNum = Math.round(Number(payAmount));
+    const isSavings = payMethod === 'Tabungan';
+
+    if (isSavings && amountNum > savingsSummary.currentBalance) {
+      setPaymentError(`Nominal melebihi saldo tabungan! Saldo tersedia: ${formatCurrency(savingsSummary.currentBalance)}.`);
+      return;
+    }
 
     if (targetLoan && amountNum > targetLoan.remaining && targetLoan.remaining > 0) {
+      if (isSavings) {
+        setPaymentError(`Pembayaran dengan tabungan tidak boleh melebihi sisa tagihan (${formatCurrency(targetLoan.remaining)}).`);
+        return;
+      }
       if (
         !confirm(
           `Jumlah pembayaran (${formatCurrency(amountNum)}) melebihi sisa tagihan (${formatCurrency(targetLoan.remaining)}). Lanjutkan?`
@@ -103,18 +154,52 @@ export default function BorrowerDetail() {
         payment_date: getNowISO(),
         amount: amountNum,
         payment_method: payMethod || undefined,
+        is_savings_payment: isSavings,
         notes: payNotes.trim() || undefined,
       });
 
       setShowPaymentForm(false);
       setPayAmount('');
       setPayNotes('');
+      setPaymentError(null);
 
       // Prompt to view receipt
       setActiveReceiptPayment(newPayment);
       setActiveReceiptLoan(targetLoan);
       setReceiptType('payment');
       setReceiptModalOpen(true);
+    } catch (err: any) {
+      setPaymentError(err.message || 'Gagal menyimpan pembayaran.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleWithdrawSavings = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!withdrawAmount || Number(withdrawAmount) <= 0 || isSubmitting) return;
+
+    setWithdrawError(null);
+    const amt = Math.round(Number(withdrawAmount));
+
+    if (amt > savingsSummary.currentBalance) {
+      setWithdrawError(`Penarikan melebihi saldo tersedia (${formatCurrency(savingsSummary.currentBalance)})`);
+      return;
+    }
+
+    if (!confirm(`Konfirmasi penarikan tabungan sebesar ${formatCurrency(amt)} untuk ${borrower.name}?`)) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      withdrawSavings(borrower.id, amt, withdrawNotes.trim() || 'Penarikan tabungan');
+      setShowWithdrawModal(false);
+      setWithdrawAmount('');
+      setWithdrawNotes('');
+      setWithdrawError(null);
+    } catch (err: any) {
+      setWithdrawError(err.message || 'Gagal memproses penarikan tabungan.');
     } finally {
       setIsSubmitting(false);
     }
@@ -127,21 +212,26 @@ export default function BorrowerDetail() {
     setIsSubmitting(true);
     try {
       const principalNum = Math.round(Number(principal));
-      const feeNum = Math.round(Number(interestFee) || 0);
+      const rateNum = Number(interestRate) >= 0 ? Number(interestRate) : 20;
+      const feeNum = Math.round((principalNum * rateNum) / 100);
       const totalDue = principalNum + feeNum;
+      const savRate = Number(savingsRate) >= 0 ? Number(savingsRate) : 5;
+      const savAmt = Math.round((principalNum * savRate) / 100);
 
       addLoan({
         borrower_id: borrower.id,
         principal_amount: principalNum,
+        interest_rate: rateNum,
         interest_fee: feeNum,
         total_due: totalDue,
+        savings_deposit_rate: savRate,
+        savings_deposit_amount: savAmt,
         loan_date: getNowISO(),
         notes: loanNotes.trim() || undefined,
       });
 
       setShowNewLoanModal(false);
       setPrincipal('');
-      setInterestFee('');
       setLoanNotes('');
     } finally {
       setIsSubmitting(false);
@@ -171,10 +261,12 @@ export default function BorrowerDetail() {
       )
     : { url: '', text: '' };
 
-  const loanPreview =
-    principal && Number(principal) > 0
-      ? calculateLoan(Number(principal), Number(interestFee) || 0)
-      : null;
+  const previewPrincipal = principal && Number(principal) > 0 ? Number(principal) : 0;
+  const previewFee = Math.round((previewPrincipal * (Number(interestRate) || 0)) / 100);
+  const previewDue = previewPrincipal + previewFee;
+  const previewSavings = Math.round((previewPrincipal * (Number(savingsRate) || 0)) / 100);
+
+  const selectedLoanForPayment = loans.find((l) => l.id === selectedLoanId);
 
   return (
     <div className="space-y-6">
@@ -197,7 +289,7 @@ export default function BorrowerDetail() {
                 <span className="badge badge-warning text-xs">Belum Lunas</span>
               )}
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">Rincian profil & riwayat transaksi</p>
+            <p className="text-xs text-slate-400 mt-0.5">Rincian profil, saldo tabungan, & riwayat pinjaman</p>
           </div>
         </div>
 
@@ -216,6 +308,7 @@ export default function BorrowerDetail() {
             onClick={() => {
               const active = loans.find((l) => l.status === 'belum_lunas');
               setSelectedLoanId(active ? active.id : loans[0]?.id || '');
+              setPaymentError(null);
               setShowPaymentForm(true);
             }}
             disabled={loans.length === 0}
@@ -224,7 +317,7 @@ export default function BorrowerDetail() {
             <CreditCard className="w-4 h-4" /> Catat Pembayaran
           </button>
           <button
-            onClick={() => setShowNewLoanModal(true)}
+            onClick={handleOpenNewLoan}
             className="btn-secondary text-xs flex items-center gap-1.5 shadow-xs"
           >
             <PlusCircle className="w-4 h-4 text-emerald-400" /> Pinjaman Baru
@@ -284,7 +377,7 @@ export default function BorrowerDetail() {
           <p className="text-base font-bold mt-0.5 text-white">{formatCurrency(totalPrincipal)}</p>
         </div>
         <div className="card p-3.5 bg-[#1e293b] border-slate-700/80">
-          <p className="text-[11px] text-slate-400">Total Jasa Pinjam</p>
+          <p className="text-[11px] text-slate-400">Total Bunga (Jasa)</p>
           <p className="text-base font-bold mt-0.5 text-purple-400">{formatCurrency(totalInterestFee)}</p>
         </div>
         <div className="card p-3.5 bg-[#1e293b] border-slate-700/80">
@@ -298,6 +391,142 @@ export default function BorrowerDetail() {
         <div className="card p-3.5 col-span-2 md:col-span-1 bg-red-950/30 border-red-800/60">
           <p className="text-[11px] text-red-400 font-semibold">Sisa Tagihan</p>
           <p className="text-base font-bold mt-0.5 text-red-400">{formatCurrency(totalRemaining)}</p>
+        </div>
+      </div>
+
+      {/* ============================================================ */}
+      {/* SECTION 2: FITUR TABUNGAN PEMINJAM                          */}
+      {/* ============================================================ */}
+      <div className="card p-5 bg-[#1e293b] border-slate-700/80 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-700 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-purple-900/50 text-purple-400 flex items-center justify-center">
+              <PiggyBank className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="font-bold text-sm text-white">Akun Tabungan Peminjam</h2>
+              <p className="text-[11px] text-slate-400">Otomatis bertambah 5% setiap pinjaman baru berhasil dibuat</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {savingsSummary.currentBalance > 0 && (
+              <button
+                onClick={() => {
+                  setWithdrawError(null);
+                  setWithdrawAmount('');
+                  setWithdrawNotes('');
+                  setShowWithdrawModal(true);
+                }}
+                className="btn-secondary text-xs flex items-center gap-1.5 py-1.5 px-3"
+              >
+                <ArrowUpRight className="w-3.5 h-3.5 text-amber-400" /> Tarik Tabungan
+              </button>
+            )}
+            {totalRemaining > 0 && savingsSummary.currentBalance > 0 && (
+              <button
+                onClick={() => {
+                  const active = loans.find((l) => l.status === 'belum_lunas') || loans[0];
+                  setSelectedLoanId(active.id);
+                  handleUseMaxSavingsForPay(active.remaining);
+                  setShowPaymentForm(true);
+                }}
+                className="btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3"
+              >
+                <PiggyBank className="w-3.5 h-3.5" /> Gunakan Untuk Bayar Tagihan
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 3 Savings Highlights Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-700/60">
+            <span className="text-[11px] text-slate-400 block">Total Tabungan Terkumpul:</span>
+            <span className="text-base font-bold text-emerald-400 mt-0.5 block">
+              {formatCurrency(savingsSummary.totalDeposited)}
+            </span>
+            <span className="text-[10px] text-slate-500">Dari akumulasi 5% pinjaman baru</span>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-700/60">
+            <span className="text-[11px] text-slate-400 block">Tabungan Telah Digunakan:</span>
+            <span className="text-base font-bold text-amber-400 mt-0.5 block">
+              {formatCurrency(savingsSummary.totalUsed + savingsSummary.totalWithdrawn)}
+            </span>
+            <span className="text-[10px] text-slate-500">
+              Bayar: {formatCurrency(savingsSummary.totalUsed)} • Tarik: {formatCurrency(savingsSummary.totalWithdrawn)}
+            </span>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-800/80">
+            <span className="text-[11px] text-purple-300 block font-semibold">Saldo Tabungan Tersedia:</span>
+            <span className="text-lg font-extrabold text-purple-300 mt-0.5 block">
+              {formatCurrency(savingsSummary.currentBalance)}
+            </span>
+            <span className="text-[10px] text-purple-400">Dapat digunakan melunasi tagihan</span>
+          </div>
+        </div>
+
+        {/* Riwayat Mutasi Tabungan */}
+        <div className="pt-2">
+          <span className="text-xs font-bold text-slate-400 block mb-2">
+            RIWAYAT TRANSAKSI TABUNGAN ({savingsHistory.length})
+          </span>
+          {savingsHistory.length === 0 ? (
+            <p className="text-xs text-slate-500 py-3 text-center bg-slate-900/40 rounded-xl">
+              Belum ada riwayat mutasi tabungan untuk peminjam ini.
+            </p>
+          ) : (
+            <div className="divide-y divide-slate-700/60 text-xs">
+              {savingsHistory.map((s) => {
+                const isDeposit = s.type === 'deposit_loan' || (s.type === 'adjustment' && s.amount > 0);
+                const isPayment = s.type === 'payment_usage';
+
+                return (
+                  <div key={s.id} className="py-2.5 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                          isDeposit
+                            ? 'bg-emerald-950/70 text-emerald-400 border border-emerald-800/80'
+                            : isPayment
+                            ? 'bg-purple-950/70 text-purple-400 border border-purple-800/80'
+                            : 'bg-amber-950/70 text-amber-400 border border-amber-800/80'
+                        }`}
+                      >
+                        {isDeposit ? <ArrowDownLeft className="w-3.5 h-3.5" /> : <ArrowUpRight className="w-3.5 h-3.5" />}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-200">
+                            {isDeposit
+                              ? 'Tambahan Tabungan Otomatis'
+                              : isPayment
+                              ? 'Gunakan Tabungan Bayar Pinjaman'
+                              : 'Penarikan Tabungan'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {formatDateTime(s.date)}
+                          </span>
+                        </div>
+                        {s.notes && <p className="text-[11px] text-slate-400 mt-0.5">{s.notes}</p>}
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <span
+                        className={`font-bold text-sm ${
+                          isDeposit ? 'text-emerald-400' : isPayment ? 'text-purple-400' : 'text-amber-400'
+                        }`}
+                      >
+                        {isDeposit ? '+' : '-'}{formatCurrency(s.amount)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -326,6 +555,9 @@ export default function BorrowerDetail() {
                       </span>
                       <span className={`badge ${loan.status === 'lunas' ? 'badge-success' : 'badge-warning'} text-[10px]`}>
                         {loan.status === 'lunas' ? 'Lunas' : 'Belum Lunas'}
+                      </span>
+                      <span className="badge badge-secondary text-[10px]">
+                        Bunga: {loan.interest_rate !== undefined ? `${loan.interest_rate}%` : '20%'}
                       </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-0.5">
@@ -357,7 +589,9 @@ export default function BorrowerDetail() {
                     <span className="font-semibold text-slate-200">{formatCurrency(loan.principal_amount)}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[11px]">Jasa Pinjam:</span>
+                    <span className="text-slate-400 block text-[11px]">
+                      Bunga ({loan.interest_rate !== undefined ? `${loan.interest_rate}%` : '20%'}):
+                    </span>
                     <span className="font-semibold text-purple-400">
                       {formatCurrency(loan.interest_fee || (loan as any).total_interest || 0)}
                     </span>
@@ -380,6 +614,7 @@ export default function BorrowerDetail() {
                       <button
                         onClick={() => {
                           setSelectedLoanId(loan.id);
+                          setPaymentError(null);
                           setShowPaymentForm(true);
                         }}
                         className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-1"
@@ -396,23 +631,30 @@ export default function BorrowerDetail() {
                       {payments.map((p, idx) => {
                         const paidBefore = payments.slice(0, idx).reduce((s, x) => s + x.amount, 0);
                         const remainingAfter = Math.max(0, loan.total_due - paidBefore - p.amount);
+                        const isSavingsPay = p.is_savings_payment || p.payment_method === 'Tabungan';
 
                         return (
                           <div key={p.id} className="py-2.5 flex items-center justify-between">
                             <div>
                               <div className="flex items-center gap-2">
                                 <span className="font-semibold text-slate-200">{formatDateTime(p.payment_date)}</span>
-                                {p.payment_method && (
-                                  <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-slate-400 border border-slate-700">
-                                    {p.payment_method}
-                                  </span>
-                                )}
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[10px] border ${
+                                    isSavingsPay
+                                      ? 'bg-purple-950/80 text-purple-300 border-purple-800'
+                                      : 'bg-slate-800 text-slate-300 border-slate-700'
+                                  }`}
+                                >
+                                  {isSavingsPay ? 'Tabungan' : p.payment_method || 'Tunai'}
+                                </span>
                               </div>
                               {p.notes && <p className="text-[11px] text-slate-400 mt-0.5">{p.notes}</p>}
                             </div>
                             <div className="flex items-center gap-3">
                               <div className="text-right">
-                                <span className="text-emerald-400 font-bold">+{formatCurrency(p.amount)}</span>
+                                <span className={`font-bold ${isSavingsPay ? 'text-purple-400' : 'text-emerald-400'}`}>
+                                  +{formatCurrency(p.amount)}
+                                </span>
                                 <p className="text-[10px] text-slate-400">Sisa: {formatCurrency(remainingAfter)}</p>
                               </div>
                               <button
@@ -424,7 +666,7 @@ export default function BorrowerDetail() {
                               </button>
                               <button
                                 onClick={() => {
-                                  if (confirm('Hapus transaksi pembayaran ini? Saldo tagihan akan dihitung ulang.')) {
+                                  if (confirm('Hapus transaksi pembayaran ini? Saldo tagihan dan tabungan akan dipulihkan secara konsisten.')) {
                                     deletePayment(p.id);
                                   }
                                 }}
@@ -456,9 +698,17 @@ export default function BorrowerDetail() {
       {showPaymentForm && (
         <div className="modal-overlay" onClick={() => setShowPaymentForm(false)}>
           <div className="modal-content max-w-md w-full bg-[#1e293b] border-slate-700" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-base font-bold mb-3 border-b border-slate-700 pb-2 text-white">
-              Catat Pembayaran — {borrower.name}
+            <h2 className="text-base font-bold mb-3 border-b border-slate-700 pb-2 text-white flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-emerald-400" /> Catat Pembayaran — {borrower.name}
             </h2>
+
+            {paymentError && (
+              <div className="mb-3 p-2.5 rounded-lg bg-red-950/70 border border-red-800 text-xs text-red-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{paymentError}</span>
+              </div>
+            )}
+
             <form onSubmit={handlePayment} className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold mb-1 text-slate-300">Pilih Pinjaman *</label>
@@ -475,6 +725,22 @@ export default function BorrowerDetail() {
                     </option>
                   ))}
                 </select>
+                {selectedLoanForPayment && (
+                  <div className="mt-1 flex items-center justify-between text-[11px]">
+                    <span className="text-red-400 font-semibold">
+                      Sisa tagihan: {formatCurrency(selectedLoanForPayment.remaining)}
+                    </span>
+                    {savingsSummary.currentBalance > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleUseMaxSavingsForPay(selectedLoanForPayment.remaining)}
+                        className="text-emerald-400 hover:text-emerald-300 underline font-bold"
+                      >
+                        Gunakan Tabungan ({formatCurrency(savingsSummary.currentBalance)})
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -494,15 +760,28 @@ export default function BorrowerDetail() {
                 <label className="block text-xs font-semibold mb-1 text-slate-300">Metode Pembayaran</label>
                 <select
                   value={payMethod}
-                  onChange={(e) => setPayMethod(e.target.value)}
+                  onChange={(e) => setPayMethod(e.target.value as any)}
                   className="input-field text-xs"
                 >
-                  <option value="Tunai">Tunai</option>
+                  <option value="Tunai">Tunai (Cash)</option>
+                  <option value="Tabungan">Gunakan Saldo Tabungan Peminjam</option>
                   <option value="Transfer Bank">Transfer Bank</option>
                   <option value="E-Wallet">E-Wallet (QRIS / GoPay / Dana / OVO)</option>
                   <option value="Lainnya">Lainnya</option>
                 </select>
               </div>
+
+              {payMethod === 'Tabungan' && (
+                <div className="p-2.5 rounded-lg bg-purple-950/40 border border-purple-800/80 text-xs text-purple-200">
+                  <div className="flex justify-between font-semibold">
+                    <span>Saldo Tabungan Tersedia:</span>
+                    <span>{formatCurrency(savingsSummary.currentBalance)}</span>
+                  </div>
+                  <p className="text-[10px] text-purple-300 mt-1">
+                    Pembayaran tabungan mengurangi saldo tabungan peminjam dan tidak dihitung sebagai uang tunai masuk.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold mb-1 text-slate-300">Catatan Pembayaran</label>
@@ -526,6 +805,73 @@ export default function BorrowerDetail() {
                 <button
                   type="button"
                   onClick={() => setShowPaymentForm(false)}
+                  className="btn-secondary flex-1 text-xs"
+                >
+                  Batal
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Savings Withdrawal Modal */}
+      {showWithdrawModal && (
+        <div className="modal-overlay" onClick={() => setShowWithdrawModal(false)}>
+          <div className="modal-content max-w-sm w-full bg-[#1e293b] border-slate-700" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-base font-bold mb-3 border-b border-slate-700 pb-2 text-white flex items-center gap-2">
+              <PiggyBank className="w-4 h-4 text-purple-400" /> Tarik Tabungan — {borrower.name}
+            </h2>
+
+            {withdrawError && (
+              <div className="mb-3 p-2.5 rounded-lg bg-red-950/70 border border-red-800 text-xs text-red-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{withdrawError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleWithdrawSavings} className="space-y-3">
+              <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-700/60 text-xs flex justify-between">
+                <span className="text-slate-400">Saldo Tersedia:</span>
+                <span className="font-bold text-purple-400">{formatCurrency(savingsSummary.currentBalance)}</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-slate-300">Nominal Penarikan (Rp) *</label>
+                <input
+                  type="number"
+                  value={withdrawAmount}
+                  onChange={(e) => setWithdrawAmount(e.target.value)}
+                  className="input-field text-xs"
+                  required
+                  min="1"
+                  max={savingsSummary.currentBalance}
+                  placeholder={`Maks ${formatCurrency(savingsSummary.currentBalance)}`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-slate-300">Catatan Penarikan</label>
+                <input
+                  type="text"
+                  value={withdrawNotes}
+                  onChange={(e) => setWithdrawNotes(e.target.value)}
+                  className="input-field text-xs"
+                  placeholder="Keterangan penarikan..."
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={isSubmitting || savingsSummary.currentBalance <= 0}
+                  className="btn-primary flex-1 text-xs disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Memproses...' : 'Konfirmasi Penarikan'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowWithdrawModal(false)}
                   className="btn-secondary flex-1 text-xs"
                 >
                   Batal
@@ -560,19 +906,46 @@ export default function BorrowerDetail() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold mb-1 text-slate-300">
-                  Jasa Pinjam (Rp) (Nominal Tetap)
-                </label>
-                <input
-                  type="number"
-                  value={interestFee}
-                  onChange={(e) => setInterestFee(e.target.value)}
-                  className="input-field text-xs"
-                  min="0"
-                  step="1000"
-                  placeholder="Contoh: 200000"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-slate-300 flex items-center gap-1">
+                    <Percent className="w-3.5 h-3.5 text-purple-400" />
+                    Bunga Pinjaman (%) *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={interestRate}
+                      onChange={(e) => setInterestRate(Number(e.target.value))}
+                      className="input-field text-xs pr-7"
+                      min="0"
+                      max="100"
+                      step="0.5"
+                      required
+                    />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-slate-300 flex items-center gap-1">
+                    <PiggyBank className="w-3.5 h-3.5 text-emerald-400" />
+                    Tabungan Otomatis (%) *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={savingsRate}
+                      onChange={(e) => setSavingsRate(Number(e.target.value))}
+                      className="input-field text-xs pr-7"
+                      min="0"
+                      max="100"
+                      step="0.5"
+                      required
+                    />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -586,24 +959,32 @@ export default function BorrowerDetail() {
                 />
               </div>
 
-              {loanPreview && (
-                <div className="p-3 rounded-lg bg-emerald-950/40 text-xs space-y-1 border border-emerald-800/80">
+              {previewPrincipal > 0 && (
+                <div className="p-3 rounded-lg bg-emerald-950/40 text-xs space-y-1.5 border border-emerald-800/80">
                   <div className="flex justify-between">
                     <span className="text-slate-400">Pinjaman Pokok:</span>
                     <span className="font-semibold text-slate-200">
-                      {formatCurrency(loanPreview.principal)}
+                      {formatCurrency(previewPrincipal)}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Jasa Pinjam:</span>
-                    <span className="font-semibold text-emerald-400">
-                      {formatCurrency(loanPreview.interestFee)}
+                    <span className="text-slate-400">Nominal Bunga ({interestRate}%):</span>
+                    <span className="font-semibold text-purple-400">
+                      {formatCurrency(previewFee)}
                     </span>
                   </div>
                   <div className="flex justify-between pt-1 border-t border-emerald-800/60">
                     <span className="text-slate-300 font-bold">TOTAL TAGIHAN:</span>
                     <span className="font-bold text-emerald-400 text-sm">
-                      {formatCurrency(loanPreview.totalDue)}
+                      {formatCurrency(previewDue)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between pt-1 border-t border-dashed border-emerald-800/60 text-emerald-300">
+                    <span className="flex items-center gap-1 text-[11px]">
+                      <PiggyBank className="w-3.5 h-3.5" /> Tambahan Tabungan ({savingsRate}%):
+                    </span>
+                    <span className="font-bold text-xs">
+                      +{formatCurrency(previewSavings)}
                     </span>
                   </div>
                 </div>

@@ -9,7 +9,7 @@ import Reports from './pages/Reports';
 import BorrowerDetail from './pages/BorrowerDetail';
 import Settings from './pages/Settings';
 import { initializeStorage } from './services/storage';
-import { registerServiceWorker } from './services/pwa';
+import { initUpdateService } from './services/updateService';
 
 function App() {
   const [ready, setReady] = useState(false);
@@ -19,11 +19,11 @@ function App() {
     document.documentElement.classList.add('dark');
     document.documentElement.setAttribute('data-theme', 'dark');
 
-    // Initialize IndexedDB storage & register Service Worker
+    // Initialize IndexedDB storage & update monitoring service
     initializeStorage().then(() => {
       setReady(true);
     });
-    registerServiceWorker();
+    initUpdateService();
   }, []);
 
   return (

@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { 
   Search, ChevronLeft, ChevronRight, Plus, 
-  Trash2, Printer, Tag
+  Trash2, Printer, Percent, PiggyBank 
 } from 'lucide-react';
 import { LoanWithBorrower, Borrower } from '../types';
-import { formatCurrency, formatDate, calculateLoan, getNowISO } from '../utils';
+import { formatCurrency, formatDate, calculateLoan, calculateSavingsDeposit, getNowISO } from '../utils';
 import { 
   getLoans, getBorrowers, getTotalPaidForLoan, 
-  addLoan, deleteLoan, subscribeDataChanges, getBorrower 
+  addLoan, deleteLoan, subscribeDataChanges, getBorrower, getAppSettings 
 } from '../services/storage';
 import ReceiptModal from '../components/ReceiptModal';
 
@@ -26,7 +26,8 @@ export default function Loans() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedBorrowerId, setSelectedBorrowerId] = useState('');
   const [principal, setPrincipal] = useState('');
-  const [interestFee, setInterestFee] = useState('');
+  const [interestRate, setInterestRate] = useState<number>(20);
+  const [savingsRate, setSavingsRate] = useState<number>(5);
   const [loanNotes, setLoanNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -51,6 +52,8 @@ export default function Loans() {
         borrower_phone: borrower?.phone,
         borrower_address: borrower?.address,
         total_paid: totalPaid,
+        total_paid_cash: 0,
+        total_paid_savings: 0,
         remaining: Math.max(0, l.total_due - totalPaid),
       };
     });
@@ -59,15 +62,29 @@ export default function Loans() {
 
   useEffect(() => {
     loadLoans();
+    const settings = getAppSettings();
+    setInterestRate(settings.defaultInterestRate);
+    setSavingsRate(settings.defaultSavingsRate);
+
     const unsub = subscribeDataChanges(loadLoans);
     return () => unsub();
   }, []);
 
   useEffect(() => {
     if (searchParams.get('action') === 'add') {
+      const settings = getAppSettings();
+      setInterestRate(settings.defaultInterestRate);
+      setSavingsRate(settings.defaultSavingsRate);
       setShowAddModal(true);
     }
   }, [searchParams]);
+
+  const handleOpenAddModal = () => {
+    const settings = getAppSettings();
+    setInterestRate(settings.defaultInterestRate);
+    setSavingsRate(settings.defaultSavingsRate);
+    setShowAddModal(true);
+  };
 
   const handleSaveLoan = (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,21 +93,26 @@ export default function Loans() {
     setIsSubmitting(true);
     try {
       const principalNum = Math.round(Number(principal));
-      const feeNum = Math.round(Number(interestFee) || 0);
+      const rateNum = Number(interestRate) >= 0 ? Number(interestRate) : 20;
+      const feeNum = Math.round((principalNum * rateNum) / 100);
       const totalDue = principalNum + feeNum;
+      const savRate = Number(savingsRate) >= 0 ? Number(savingsRate) : 5;
+      const savAmt = Math.round((principalNum * savRate) / 100);
 
       addLoan({
         borrower_id: selectedBorrowerId,
         principal_amount: principalNum,
+        interest_rate: rateNum,
         interest_fee: feeNum,
         total_due: totalDue,
+        savings_deposit_rate: savRate,
+        savings_deposit_amount: savAmt,
         loan_date: getNowISO(),
         notes: loanNotes.trim() || undefined,
       });
 
       setShowAddModal(false);
       setPrincipal('');
-      setInterestFee('');
       setSelectedBorrowerId('');
       setLoanNotes('');
     } finally {
@@ -134,10 +156,10 @@ export default function Loans() {
   const totalPages = Math.ceil(sorted.length / perPage) || 1;
   const paginated = sorted.slice((page - 1) * perPage, page * perPage);
 
-  const previewCalculation =
-    principal && Number(principal) > 0
-      ? calculateLoan(Number(principal), Number(interestFee) || 0)
-      : null;
+  const previewPrincipal = principal && Number(principal) > 0 ? Number(principal) : 0;
+  const previewFee = Math.round((previewPrincipal * (Number(interestRate) || 0)) / 100);
+  const previewDue = previewPrincipal + previewFee;
+  const previewSavings = Math.round((previewPrincipal * (Number(savingsRate) || 0)) / 100);
 
   return (
     <div className="space-y-6">
@@ -146,11 +168,11 @@ export default function Loans() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white">Daftar Pinjaman</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Kelola transaksi pinjaman pokok, nominal jasa pinjam, dan status pelunasan
+            Kelola pinjaman pokok, bunga dinamis tersimpan (snapshot), dan tabungan otomatis peminjam
           </p>
         </div>
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={handleOpenAddModal}
           className="btn-primary flex items-center gap-1.5 text-xs shadow-xs"
         >
           <Plus className="w-4 h-4" /> Buat Pinjaman Baru
@@ -210,7 +232,8 @@ export default function Loans() {
                 <th className="text-left p-3.5 font-bold text-slate-400">Peminjam</th>
                 <th className="text-left p-3.5 font-bold text-slate-400">Tgl Pinjam</th>
                 <th className="text-right p-3.5 font-bold text-slate-400">Pokok Pinjaman</th>
-                <th className="text-right p-3.5 font-bold text-slate-400">Jasa Pinjam</th>
+                <th className="text-right p-3.5 font-bold text-slate-400">Bunga (%)</th>
+                <th className="text-right p-3.5 font-bold text-slate-400">Nominal Bunga</th>
                 <th className="text-right p-3.5 font-bold text-slate-400">Total Tagihan</th>
                 <th className="text-right p-3.5 font-bold text-slate-400">Dibayar</th>
                 <th className="text-right p-3.5 font-bold text-slate-400">Sisa Tagihan</th>
@@ -221,7 +244,7 @@ export default function Loans() {
             <tbody className="divide-y divide-slate-700/60">
               {paginated.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-10 text-center text-slate-500">
+                  <td colSpan={10} className="p-10 text-center text-slate-500">
                     Tidak ada catatan pinjaman yang sesuai.
                   </td>
                 </tr>
@@ -236,6 +259,9 @@ export default function Loans() {
                     </td>
                     <td className="p-3.5 font-medium text-slate-300">{formatDate(l.loan_date)}</td>
                     <td className="p-3.5 text-right font-medium text-slate-200">{formatCurrency(l.principal_amount)}</td>
+                    <td className="p-3.5 text-right font-semibold text-purple-400">
+                      {l.interest_rate !== undefined ? `${l.interest_rate}%` : '20%'}
+                    </td>
                     <td className="p-3.5 text-right font-medium text-purple-400">
                       {formatCurrency(l.interest_fee || (l as any).total_interest || 0)}
                     </td>
@@ -291,7 +317,7 @@ export default function Loans() {
                     {l.borrower_name}
                   </Link>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Tanggal Pinjam: {formatDate(l.loan_date)}
+                    Tanggal Pinjam: {formatDate(l.loan_date)} • Bunga: {l.interest_rate !== undefined ? `${l.interest_rate}%` : '20%'}
                   </p>
                 </div>
                 <span className={`badge ${l.status === 'lunas' ? 'badge-success' : 'badge-warning'} text-[10px]`}>
@@ -305,14 +331,14 @@ export default function Loans() {
                   <span className="font-medium text-slate-200">{formatCurrency(l.principal_amount)}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px]">Jasa Pinjam:</span>
+                  <span className="text-slate-400 block text-[10px]">Nominal Bunga:</span>
                   <span className="font-semibold text-purple-400">
                     {formatCurrency(l.interest_fee || (l as any).total_interest || 0)}
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px]">Telah Dibayar:</span>
-                  <span className="font-semibold text-emerald-400">{formatCurrency(l.total_paid)}</span>
+                  <span className="text-slate-400 block text-[10px]">Total Tagihan:</span>
+                  <span className="font-bold text-white">{formatCurrency(l.total_due)}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px]">Sisa Tagihan:</span>
@@ -411,19 +437,46 @@ export default function Loans() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold mb-1 text-slate-300">
-                  Jasa Pinjam (Rp) (Nominal Tetap)
-                </label>
-                <input
-                  type="number"
-                  value={interestFee}
-                  onChange={(e) => setInterestFee(e.target.value)}
-                  className="input-field text-xs"
-                  min="0"
-                  step="1000"
-                  placeholder="Contoh: 200000"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-slate-300 flex items-center gap-1">
+                    <Percent className="w-3.5 h-3.5 text-purple-400" />
+                    Bunga Pinjaman (%) *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={interestRate}
+                      onChange={(e) => setInterestRate(Number(e.target.value))}
+                      className="input-field text-xs pr-7"
+                      min="0"
+                      max="100"
+                      step="0.5"
+                      required
+                    />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-slate-300 flex items-center gap-1">
+                    <PiggyBank className="w-3.5 h-3.5 text-emerald-400" />
+                    Tabungan Otomatis (%) *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={savingsRate}
+                      onChange={(e) => setSavingsRate(Number(e.target.value))}
+                      className="input-field text-xs pr-7"
+                      min="0"
+                      max="100"
+                      step="0.5"
+                      required
+                    />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -437,24 +490,32 @@ export default function Loans() {
                 />
               </div>
 
-              {previewCalculation && (
-                <div className="p-3 rounded-lg bg-emerald-950/40 text-xs space-y-1 border border-emerald-800/80">
+              {previewPrincipal > 0 && (
+                <div className="p-3 rounded-lg bg-emerald-950/40 text-xs space-y-1.5 border border-emerald-800/80">
                   <div className="flex justify-between">
                     <span className="text-slate-400">Pokok Pinjaman:</span>
                     <span className="font-semibold text-slate-200">
-                      {formatCurrency(previewCalculation.principal)}
+                      {formatCurrency(previewPrincipal)}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Jasa Pinjam:</span>
-                    <span className="font-semibold text-emerald-400">
-                      {formatCurrency(previewCalculation.interestFee)}
+                    <span className="text-slate-400">Nominal Bunga ({interestRate}%):</span>
+                    <span className="font-semibold text-purple-400">
+                      {formatCurrency(previewFee)}
                     </span>
                   </div>
                   <div className="flex justify-between pt-1 border-t border-emerald-800/60">
                     <span className="text-slate-300 font-bold">TOTAL TAGIHAN:</span>
                     <span className="font-bold text-emerald-400 text-sm">
-                      {formatCurrency(previewCalculation.totalDue)}
+                      {formatCurrency(previewDue)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between pt-1 border-t border-dashed border-emerald-800/60 text-emerald-300">
+                    <span className="flex items-center gap-1 text-[11px]">
+                      <PiggyBank className="w-3.5 h-3.5" /> Tambahan Tabungan Peminjam ({savingsRate}%):
+                    </span>
+                    <span className="font-bold text-xs">
+                      +{formatCurrency(previewSavings)}
                     </span>
                   </div>
                 </div>

@@ -5,7 +5,11 @@ import {
   Menu, X, Wallet, Settings, Download, Wifi, WifiOff
 } from 'lucide-react';
 import { subscribePWAInstall } from '../services/pwa';
+import { subscribeUpdate, getUpdateState, UpdateState } from '../services/updateService';
 import PWAInstallModal from './PWAInstallModal';
+import UpdateModal from './UpdateModal';
+import AboutAppModal from './AboutAppModal';
+import { CURRENT_APP_VERSION } from '../version';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -25,6 +29,8 @@ export default function Layout({ children }: LayoutProps) {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [canInstall, setCanInstall] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
+  const [updateState, setUpdateState] = useState<UpdateState>(getUpdateState());
   const location = useLocation();
 
   useEffect(() => {
@@ -34,11 +40,13 @@ export default function Layout({ children }: LayoutProps) {
     window.addEventListener('offline', handleOffline);
 
     const unsubPWA = subscribePWAInstall((can) => setCanInstall(can));
+    const unsubUpdate = subscribeUpdate((state) => setUpdateState(state));
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       unsubPWA();
+      unsubUpdate();
     };
   }, []);
 
@@ -94,17 +102,33 @@ export default function Layout({ children }: LayoutProps) {
           })}
         </nav>
 
-        {/* PWA Install Button Footer */}
+        {/* PWA Install Button & Version Footer */}
         <div className="p-4 border-t border-slate-800 space-y-2">
+          {updateState.hasUpdate && (
+            <button
+              onClick={() => setShowAboutModal(true)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all animate-pulse"
+            >
+              <span>Update Tersedia!</span>
+              <span className="badge badge-success text-[10px]">v{updateState.latestVersion}</span>
+            </button>
+          )}
+
           <button
             onClick={() => setShowInstallModal(true)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold bg-emerald-950/50 text-emerald-300 hover:bg-emerald-900/60 border border-emerald-800/60 transition-all"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-700/60 transition-all"
           >
             <Download className="w-3.5 h-3.5" /> Pasang di Windows / HP
           </button>
-          <div className="text-center text-[10px] text-slate-500 pt-1">
-            DanaNote v1.0 • Offline Ready
-          </div>
+          
+          <button
+            onClick={() => setShowAboutModal(true)}
+            className="w-full text-center text-[11px] text-slate-400 hover:text-emerald-400 pt-1 transition-colors flex items-center justify-center gap-1.5"
+          >
+            <span>DanaNote v{CURRENT_APP_VERSION}</span>
+            <span className="text-slate-600">•</span>
+            <span>Tentang Aplikasi</span>
+          </button>
         </div>
       </aside>
 
@@ -149,12 +173,29 @@ export default function Layout({ children }: LayoutProps) {
               })}
             </nav>
 
-            <div className="p-4 border-t border-slate-800">
+            <div className="p-4 border-t border-slate-800 space-y-2">
+              {updateState.hasUpdate && (
+                <button
+                  onClick={() => { setShowAboutModal(true); setSidebarOpen(false); }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
+                >
+                  <span>Update Tersedia!</span>
+                  <span className="badge badge-success text-[10px]">v{updateState.latestVersion}</span>
+                </button>
+              )}
               <button
                 onClick={() => { setShowInstallModal(true); setSidebarOpen(false); }}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-800/60"
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold bg-slate-800/80 text-slate-300 border border-slate-700/60"
               >
                 <Download className="w-3.5 h-3.5" /> Pasang Aplikasi (PWA)
+              </button>
+              <button
+                onClick={() => { setShowAboutModal(true); setSidebarOpen(false); }}
+                className="w-full text-center text-[11px] text-slate-400 hover:text-emerald-400 pt-1 flex items-center justify-center gap-1.5"
+              >
+                <span>DanaNote v{CURRENT_APP_VERSION}</span>
+                <span className="text-slate-600">•</span>
+                <span>Tentang Aplikasi</span>
               </button>
             </div>
           </aside>
@@ -229,6 +270,18 @@ export default function Layout({ children }: LayoutProps) {
       <PWAInstallModal
         isOpen={showInstallModal}
         onClose={() => setShowInstallModal(false)}
+      />
+
+      {/* Global About App & Manual Update Check Modal */}
+      <AboutAppModal
+        isOpen={showAboutModal}
+        onClose={() => setShowAboutModal(false)}
+        updateState={updateState}
+      />
+
+      {/* Modern Update Notification Modal */}
+      <UpdateModal
+        updateState={updateState}
       />
     </div>
   );
